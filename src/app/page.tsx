@@ -1,103 +1,130 @@
-import Image from "next/image";
+"use client";
+import { useState } from "react";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [url, setUrl] = useState<string | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  async function handleUpload() {
+    if (!file) return;
+    setLoading(true);
+    setProgress(0);
+
+    const tenantId = "bad1ada4-b2d9-4975-9086-4a5ff25ce9c7";
+    const projectId = "fd716f3c-8a4f-4679-b244-f57bc83fbc41";
+    const userId = "fd4088d8-89e1-4961-be5f-2055c65609bc";
+
+    //
+    // 1️⃣ Récupération de l’URL PUT signée
+    //
+    const params = new URLSearchParams({
+      tenantId,
+      projectId,
+      fileName: file.name,
+      mimeType: file.type,
+    });
+
+    const uploadUrlRes = await fetch(
+      `http://gateway.localhost/file/upload-url?${params.toString()}`
+    );
+
+    if (!uploadUrlRes.ok) {
+      console.error("❌ Erreur upload-url:", await uploadUrlRes.text());
+      setLoading(false);
+      return;
+    }
+
+    const { uploadUrl, key } = await uploadUrlRes.json();
+    console.log("🔐 Signed URL:", uploadUrl);
+
+    //
+    // 2️⃣ Upload direct → XMLHttpRequest pour la progression
+    //
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", uploadUrl);
+      xhr.setRequestHeader("Content-Type", file.type);
+
+      // 📊 suivi progression
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          setProgress(percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve();
+        else reject(new Error(`Erreur PUT (${xhr.status})`));
+      };
+
+      xhr.onerror = () => reject(new Error("Erreur réseau XHR"));
+      xhr.send(file);
+    });
+
+    //
+    // 3️⃣ Notifier le Gateway
+    //
+    const afterUploadRes = await fetch(
+      "http://gateway.localhost/file/after-upload",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          projectId,
+          userId,
+          key,
+          fileName: file.name,
+          mimeType: file.type,
+        }),
+      }
+    );
+
+    const afterData = await afterUploadRes.json();
+    setUrl(afterData.url);
+
+    setLoading(false);
+  }
+
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center p-10">
+      <h1 className="text-2xl font-bold mb-6">Upload direct Cloudflare R2</h1>
+
+      <input
+        type="file"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+        className="mb-4"
+      />
+
+      <button
+        onClick={handleUpload}
+        disabled={!file || loading}
+        className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+      >
+        {loading ? "Upload..." : "Envoyer"}
+      </button>
+
+      {/* Barre de progression */}
+      {loading && (
+        <div className="w-full max-w-md mt-4">
+          <div className="w-full bg-gray-300 rounded h-4 overflow-hidden">
+            <div
+              className="bg-green-600 h-4 transition-all"
+              style={{ width: `${progress}%` }}
+            ></div>
+          </div>
+          <p className="text-center mt-1">{progress}%</p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+      )}
+
+      {url && (
+        <p className="mt-4 text-center break-all">
+          <strong>URL finale :</strong> {url}
+        </p>
+      )}
+    </main>
   );
 }
