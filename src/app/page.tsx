@@ -6,24 +6,27 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [url, setUrl] = useState<string | null>(null);
+  const [lastKey, setLastKey] = useState<string | null>(null); // <-- 🔥 important !
 
   async function handleUpload() {
     if (!file) return;
     setLoading(true);
     setProgress(0);
 
-    const tenantId = "bad1ada4-b2d9-4975-9086-4a5ff25ce9c7";
-    const projectId = "fd716f3c-8a4f-4679-b244-f57bc83fbc41";
-    const userId = "fd4088d8-89e1-4961-be5f-2055c65609bc";
+    const tenantId = "836eaed4-f7cb-4b03-8767-ef8323d330bc";
+    const projectId = "a393ac07-cd66-47d0-a542-2a4376ac277c";
+    const userId = "34c51a32-c07a-4a84-97ce-c55909b5c08e";
+    const questionnaireId = "93e11a45-3351-48c1-ab60-a02e66b3cdab";
 
     //
-    // 1️⃣ Récupération de l’URL PUT signée
+    // 1️⃣ Obtenir l’URL signée PUT
     //
     const params = new URLSearchParams({
       tenantId,
       projectId,
       fileName: file.name,
       mimeType: file.type,
+      questionnaireId,
     });
 
     const uploadUrlRes = await fetch(
@@ -40,18 +43,16 @@ export default function Home() {
     console.log("🔐 Signed URL:", uploadUrl);
 
     //
-    // 2️⃣ Upload direct → XMLHttpRequest pour la progression
+    // 2️⃣ Upload direct vers Cloudflare R2
     //
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("PUT", uploadUrl);
       xhr.setRequestHeader("Content-Type", file.type);
 
-      // 📊 suivi progression
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100);
-          setProgress(percent);
+          setProgress(Math.round((event.loaded / event.total) * 100));
         }
       };
 
@@ -65,7 +66,7 @@ export default function Home() {
     });
 
     //
-    // 3️⃣ Notifier le Gateway
+    // 3️⃣ Appel à after-upload
     //
     const afterUploadRes = await fetch(
       "http://gateway.localhost/file/after-upload",
@@ -79,19 +80,61 @@ export default function Home() {
           key,
           fileName: file.name,
           mimeType: file.type,
+          questionnaireId,
         }),
       }
     );
 
     const afterData = await afterUploadRes.json();
+
+    //
+    // 💾 On sauvegarde le key pour le deuxième bouton
+    //
+    setLastKey(key);
     setUrl(afterData.url);
 
     setLoading(false);
   }
 
+  //
+  // 🎯 2️⃣ Ce bouton relance *uniquement* after-upload
+  // sans réuploader la vidéo dans R2.
+  //
+  async function resendAfterUpload() {
+    if (!lastKey) {
+      alert("Aucun fichier uploadé");
+      return;
+    }
+
+    const tenantId = "7a0eb7d5-d2cd-4f7e-8f72-78ea46d1a595";
+    const projectId = "cdc7d1d5-b01a-4c90-9d15-f75c55053e7f";
+    const userId = "9ed96e8c-7f8d-479c-a398-a49e78e9db85";
+    const questionnaireId = "4443b661-5174-40fd-b56c-09a1791f704a";
+
+    console.log("🔁 Relance du after-upload...");
+
+    const res = await fetch("http://gateway.localhost/file/after-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tenantId,
+        projectId,
+        userId,
+        key: lastKey,          // <-- 🎯 IMPORTANT
+        fileName: "REPLAY.mp4", // valeur peu importante
+        mimeType: "video/mp4",  // idem
+        questionnaireId,
+      }),
+    });
+
+    const data = await res.json();
+    console.log("🔥 After-upload rejoué :", data);
+    alert("After-upload relancé !");
+  }
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-10">
-      <h1 className="text-2xl font-bold mb-6">Upload direct Cloudflare R2</h1>
+      <h1 className="text-2xl font-bold mb-6">Upload + Replay Flow</h1>
 
       <input
         type="file"
@@ -107,17 +150,27 @@ export default function Home() {
         {loading ? "Upload..." : "Envoyer"}
       </button>
 
-      {/* Barre de progression */}
       {loading && (
-        <div className="w-full max-w-md mt-4">
-          <div className="w-full bg-gray-300 rounded h-4 overflow-hidden">
-            <div
-              className="bg-green-600 h-4 transition-all"
-              style={{ width: `${progress}%` }}
-            ></div>
+        <>
+          <div className="w-full max-w-md mt-4">
+            <div className="w-full bg-gray-300 rounded h-4 overflow-hidden">
+              <div
+                className="bg-green-600 h-4 transition-all"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
           </div>
           <p className="text-center mt-1">{progress}%</p>
-        </div>
+        </>
+      )}
+
+      {lastKey && (
+        <button
+          onClick={resendAfterUpload}
+          className="mt-4 bg-purple-600 text-white px-4 py-2 rounded"
+        >
+          🔁 Rejouer le flow (sans re-upload)
+        </button>
       )}
 
       {url && (
