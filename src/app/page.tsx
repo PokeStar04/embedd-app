@@ -30,7 +30,8 @@ export default function Home() {
     });
 
     const uploadUrlRes = await fetch(
-      `http://gateway.localhost/file/upload-url?${params.toString()}`
+      `https://api.dev.embedd.fr/file/upload-url?${params.toString()}`
+      // `http://gateway.localhost/file/upload-url?${params.toString()}`
     );
 
     if (!uploadUrlRes.ok) {
