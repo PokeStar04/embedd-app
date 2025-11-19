@@ -38,8 +38,8 @@ interface Project {
 
 export default function Home() {
   const [config, setConfig] = useState<Config>({
-    apiBaseUrl: "http://gateway.localhost",
-    // apiBaseUrl: "https://api.dev.embedd.fr",
+    // apiBaseUrl: "http://gateway.localhost",
+    apiBaseUrl: "https://api.dev.embedd.fr",
     tenantId: "",
     projectId: "",
     userId: "",
